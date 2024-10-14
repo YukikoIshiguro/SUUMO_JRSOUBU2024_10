@@ -1,0 +1,52 @@
+handle_responseメソッドは、スクレイピングして取得したWebページから物件の詳細情報を解析し、それを保存するための処理です。各物件の情報をresponseオブジェクトからCSSセレクタを使って抽出し、データをリスト形式にまとめます。このメソッド内の処理を一行ずつ解説します。
+
+コードの解説
+python
+コードをコピーする
+def handle_response(self, response: HtmlResponse):
+    """ 
+    物件データを処理するためのメソッド。 各物件の情報をリストに保存します。
+    """
+    for row in response.css("div.property"):  
+        # 各物件の情報が含まれるブロック（div.property）を1件ずつ処理するためのループ。
+        
+        title = row.css("h2.property_inner-title a::text").get(default='').strip()  
+        # 物件のタイトルを取得。h2タグ内のリンクテキスト部分から取得し、余計な空白を削除。
+
+        rent_price = row.css("div.detailbox-property-point::text").get(default='').strip()  
+        # 家賃情報を取得。物件の詳細ボックス内の家賃テキスト（div.detailbox-property-point）から取得。
+        
+        property_table = row.css("div.detailbox > div.detailbox-property > table")
+        # 物件の詳細情報が入っているテーブルを取得。このテーブルに間取りや専有面積の情報が含まれている。
+        
+        plan_of_house = property_table.css("td.detailbox-property--col3 > div:nth-child(1)::text").get(default='').strip()  
+        # テーブル内から間取り情報を取得。tdタグの3列目の最初のdivからテキストを取得。
+
+        exclusive_area = property_table.css("td.detailbox-property--col3 > div:nth-child(2)::text").get(default='').strip()  
+        # 専有面積情報を取得。同じく3列目の2番目のdivからテキストを抽出。
+        
+        detail_texts = row.css("div.detailbox-note div.detailnote-box div::text").getall()  
+        # 物件の詳細な説明を全てのテキストとして取得。説明は複数行になる可能性があるため、getall()でリストにする。
+
+        detail_texts = [t.strip() for t in detail_texts if t.strip() != ""]  
+        # 不要な空白を削除し、空のテキスト（不要な要素）を取り除く処理。
+
+        detail = "\n".join(detail_texts).strip()  
+        # リスト形式の詳細テキストを1つの文字列に結合し、さらに余分な空白を削除。
+
+        html_content = row.get()  
+        # 物件情報全体のHTMLを取得。正規表現で住所を抽出するために使う。
+
+        address_match = re.search(r'<td class="detailbox-property-col">.*?<!-- 住所 -->(.*?)</td>', html_content, re.DOTALL)  
+        # 正規表現で住所をHTMLの中から探し出す。物件の住所情報はコメント（<!-- 住所 -->）に注釈されている。
+        
+        address = address_match.group(1).strip() if address_match else '住所不明'  
+        # 正規表現でマッチした住所があれば、その部分を抽出し、空白を取り除く。見つからなかった場合は '住所不明' を設定。
+
+        print(f"住所: {address}")  
+        # 住所をデバッグ出力としてコンソールに表示。スクレイピングの結果を確認するため。
+技術的なポイント
+CSSセレクタを用いたデータ抽出: response.css()メソッドを使って、HTMLから特定の要素（タイトルや家賃、間取りなど）を抽出しています。CSSセレクタの指定により、ページ構造に基づいて要素を的確に選択できます。
+正規表現によるデータ抽出: 住所情報はコメントで注釈されているため、通常のCSSセレクタで取得できない。そのため、正規表現を使ってHTMLの中から特定のパターンに一致する部分を抽出しています。
+データの前処理: 取得したデータには空白や不要な文字が含まれることが多いので、strip()やjoin()を使ってテキストをきれいに整えています。
+デバッグ用の出力: print()関数を使って住所を出力し、スクレイピングが正常に動作しているかを確認しています。
