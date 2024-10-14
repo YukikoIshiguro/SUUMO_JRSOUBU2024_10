@@ -1,0 +1,66 @@
+import scrapy
+from scrapy.http.response.html import HtmlResponse
+from urllib.parse import urljoin
+import pandas as pd
+from datetime import datetime
+import re
+
+class SuumoSpider(scrapy.Spider):
+    name = "suumo"  # スパイダーの名前を定義
+
+    origin = "https://suumo.jp"  # ベースURL
+
+    allowed_domains = ["suumo.jp"]  # スクレイピングを許可するドメイン
+    start_urls = [
+        "https://suumo.jp/jj/chintai/ichiran/FR301FC005/?ar=030&bs=040&ta=13&sc=13113&cb=0.0&ct=8.0&mb=0&mt=9999999&et=20&cn=5&shkr1=03&shkr2=03&shkr3=03&shkr4=03&sngz=&po1=25&po2=99&pc=50"
+    ]  # スクレイピング開始ページのURL
+
+    properties = []  # 物件情報を保存するためのリスト
+
+    def parse(self, response: HtmlResponse):
+        """ スパイダーが最初に呼ばれるメソッドです。ページの物件データを処理し、次ページがあればそのリクエストを送信します。 """
+        self.handle_response(response)  # 物件情報の処理
+
+        # 次のページのリンクを探し、あればそのページをスクレイピングする
+        next_page = response.css("a.pagination-next::attr(href)").get()
+        if next_page:
+            yield scrapy.Request(url=urljoin(self.origin, next_page), callback=self.parse)
+
+    def handle_response(self, response: HtmlResponse):
+        """ 物件データを処理するためのメソッド。 各物件の情報をリストに保存します。 """
+        for row in response.css("div.property"):
+            title = row.css("h2.property_inner-title a::text").get(default='').strip()  # 物件のタイトルを取得
+            rent_price = row.css("div.detailbox-property-point::text").get(default='').strip()  # 家賃情報を取得
+            property_table = row.css("div.detailbox > div.detailbox-property > table")
+            plan_of_house = property_table.css("td.detailbox-property--col3 > div:nth-child(1)::text").get(default='').strip()  # 間取りを取得
+            exclusive_area = property_table.css("td.detailbox-property--col3 > div:nth-child(2)::text").get(default='').strip()  # 専有面積を取得
+            detail_texts = row.css("div.detailbox-note div.detailnote-box div::text").getall()
+            detail_texts = [t.strip() for t in detail_texts if t.strip() != ""]
+            detail = "\n".join(detail_texts).strip()  # 詳細な説明を取得
+            html_content = row.get()  # 物件のHTML全体を取得
+            address_match = re.search(r'<td class="detailbox-property-col">.*?<!-- 住所 -->(.*?)</td>', html_content, re.DOTALL)
+            address = address_match.group(1).strip() if address_match else '住所不明'  # 住所を正規表現で抽出
+            print(f"住所: {address}")  # 住所をデバッグ出力
+
+            # 物件情報をリストに追加
+            self.properties.append({
+                "Title": title,
+                "Rent Price": rent_price,
+                "Plan of House": plan_of_house,
+                "Exclusive Area": exclusive_area,
+                "Detail": detail,
+                "Address": address,
+            })
+
+    def close(self, reason):
+        """ スパイダーが終了した時に呼ばれるメソッドです。 """
+        self.save_to_excel()  # スクレイピング結果をExcelに保存
+
+    def save_to_excel(self):
+        """ 物件データをExcelファイルとして保存します。 """
+        df = pd.DataFrame(self.properties)  # 物件情報をデータフレームに変換
+        current_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")  # 現在時刻を取得
+        file_name = f"suumo_data_{current_time}.xlsx"  # ファイル名を生成
+        file_path = f"C:/Users/yukik/Downloads/{file_name}"  # ダウンロードフォルダに保存
+        df.to_excel(file_path, index=False)  # Excelにデータを書き込み
+        self.log(f"Excelファイルが保存されました: {file_path}")  # ログ出力
